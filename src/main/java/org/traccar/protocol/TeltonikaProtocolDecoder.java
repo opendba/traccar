@@ -653,6 +653,15 @@ public class TeltonikaProtocolDecoder extends BaseProtocolDecoder {
         return new AbstractMap.SimpleEntry<>(key, value);
     }
 
+    private void replaceAttribute(Position position, String key, String newKey, Object value) {
+        Map<String, Object> posAttrs = position.getAttributes();
+        if (newKey != null) {
+            // replace attribute value (remove old, add new)
+            posAttrs.remove(key);
+            position.add(createEntry(newKey, value));
+        }
+    }
+
     private void decodeFMB9xxParameters(Position position) {
         // this function will check all attributes of the position and if there are any unparsed (i.e. io214),
         // then it will try to map it to proper name based on latest FMB protocol description
@@ -670,11 +679,17 @@ public class TeltonikaProtocolDecoder extends BaseProtocolDecoder {
                 id = Integer.parseInt(entry.getKey().substring(Position.PREFIX_IO.length()));
                 // convert Id to text
                 String event = fmb9xxParser.parseEvent(id);
-                if (event != null) {
-                    // replace attribute value (remove old, add new)
-                    position.add(createEntry(event, entry.getValue()));
-                    posAttrs.remove(entry.getKey());
+                replaceAttribute(position, entry.getKey(), event, entry.getValue());
+            }
+            if (entry.getKey().equals(Position.KEY_EVENT)) {
+                Object event;
+                try {
+                    id = Integer.parseInt(entry.getValue().toString());
+                    event = fmb9xxParser.parseEvent(id);
+                } catch (NumberFormatException e) {
+                    event = entry.getValue();
                 }
+                replaceAttribute(position, entry.getKey(), entry.getKey(), event);
             }
         }
     }
