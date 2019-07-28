@@ -47,7 +47,7 @@ public class TeltonikaProtocolDecoder extends BaseProtocolDecoder {
     static final String KEY_AXIS_Y = "axisY";
     static final String KEY_AXIS_Z = "axisZ";
     static final String KEY_WORK_MODE = "workMode";
-    private final String PREFIX_DRIVER = "driver";
+    private static final String PREFIX_DRIVER = "driver";
     private static final String KEY_USB_CONNECTED = "usbConnected";
     private static final String KEY_UPTIME = "uptime";
     private static final String KEY_BUTTON = "button";
@@ -254,7 +254,7 @@ public class TeltonikaProtocolDecoder extends BaseProtocolDecoder {
             case 132:
             case 133:
             case 134:
-                String driver = id == 129 || id == 132 ? "" : position.getString(PREFIX_DRIVER+"1");
+                String driver = id == 129 || id == 132 ? "" : position.getString(PREFIX_DRIVER + "1");
                 position.set(PREFIX_DRIVER + (id >= 132 ? 2 : 1),
                         driver + buf.readSlice(length).toString(StandardCharsets.US_ASCII).trim());
                 break;
@@ -535,7 +535,7 @@ public class TeltonikaProtocolDecoder extends BaseProtocolDecoder {
         }
 
         decodeNetwork(position);
-        if(this.parseFMB9xx){
+        if (this.parseFMB9xx) {
             decodeFMB9xxParameters(position);
         }
         checkGPSStatus(position);
@@ -663,14 +663,14 @@ public class TeltonikaProtocolDecoder extends BaseProtocolDecoder {
         int id;
 
         // iterate over copy
-        for(Map.Entry<String, Object> entry : attrs.entrySet()) {
+        for (Map.Entry<String, Object> entry : attrs.entrySet()) {
             // check if there are unparsed attributes
-            if( entry.getKey().matches("^"+Position.PREFIX_IO+"[0-9]+$") ) {
+            if (entry.getKey().matches("^" + Position.PREFIX_IO + "[0-9]+$")) {
                 // parse attribute Id
                 id = Integer.parseInt(entry.getKey().substring(Position.PREFIX_IO.length()));
                 // convert Id to text
                 String event = fmb9xxParser.parseEvent(id);
-                if(event != null){
+                if (event != null) {
                     // replace attribute value (remove old, add new)
                     position.add(createEntry(event, entry.getValue()));
                     posAttrs.remove(entry.getKey());
@@ -679,7 +679,7 @@ public class TeltonikaProtocolDecoder extends BaseProtocolDecoder {
         }
     }
 
-    public void setParseFMB9xx(boolean parseFMB9xx){
+    public void setParseFMB9xx(boolean parseFMB9xx) {
         this.parseFMB9xx = parseFMB9xx;
     }
 }
