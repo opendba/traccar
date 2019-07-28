@@ -21,6 +21,7 @@ import java.util.Collection;
 import java.util.Date;
 import java.util.List;
 import java.util.Map;
+import java.util.Vector;
 import java.util.TimeZone;
 
 import static org.junit.Assert.assertEquals;
@@ -135,27 +136,32 @@ public class ProtocolTest extends BaseTest {
     }
 
     protected void verifyPositions(BaseProtocolDecoder decoder, Object object) throws Exception {
-        verifyDecodedList(decoder.decode(null, null, object), true, null);
+        verifyDecodedListPosition(decoder.decode(null, null, object), true, null);
     }
 
     protected void verifyPositions(BaseProtocolDecoder decoder, boolean checkLocation, Object object) throws Exception {
-        verifyDecodedList(decoder.decode(null, null, object), checkLocation, null);
+        verifyDecodedListPosition(decoder.decode(null, null, object), checkLocation, null);
     }
 
     protected void verifyPositions(BaseProtocolDecoder decoder, Object object, Position position) throws Exception {
-        verifyDecodedList(decoder.decode(null, null, object), true, position);
+        verifyDecodedListPosition(decoder.decode(null, null, object), true, position);
     }
 
-    private void verifyDecodedList(Object decodedObject, boolean checkLocation, Position expected) {
+    protected void verifyPositionList(BaseProtocolDecoder decoder, Object object, List<Position> positions) throws Exception {
+        verifyDecodedList(decoder.decode(null, null, object), true, positions);
+    }
 
-        assertNotNull("list is null", decodedObject);
-        assertTrue("not a list", decodedObject instanceof List);
-        assertFalse("list is empty", ((List) decodedObject).isEmpty());
-
+    private void verifyDecodedListPosition(Object decodedObject, boolean checkLocation, Position expected) {
+        List<Position> posList = new Vector<Position>();
+        // check that each element of decodedObject matches with expected position
         for (Object item : (List) decodedObject) {
-            verifyDecodedPosition(item, checkLocation, false, expected);
+            posList.add(expected);
         }
-
+        verifyDecodedList(
+                decodedObject
+                , checkLocation
+                , posList
+        );
     }
 
     private void verifyDecodedPosition(Object decodedObject, boolean checkLocation, boolean checkAttributes, Position expected) {
@@ -328,4 +334,17 @@ public class ProtocolTest extends BaseTest {
         assertEquals(ByteBufUtil.hexDump(expected), ByteBufUtil.hexDump((ByteBuf) object));
     }
 
+    private void verifyDecodedList(Object decodedObject, boolean checkLocation, List<Position> expectedPositions) {
+
+        assertNotNull("list is null", decodedObject);
+        assertTrue("not a list", decodedObject instanceof List);
+        assertFalse("list is empty", ((List) decodedObject).isEmpty());
+        assertEquals(((List) decodedObject).size(), expectedPositions.size());
+
+        int i = 0;
+        for (Object item : (List) decodedObject) {
+            verifyDecodedPosition(item, checkLocation, false, expectedPositions.get(i++));
+        }
+
+    }
 }

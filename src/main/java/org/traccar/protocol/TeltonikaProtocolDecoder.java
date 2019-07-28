@@ -38,8 +38,20 @@ import java.util.HashMap;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
+import java.util.AbstractMap;
 
 public class TeltonikaProtocolDecoder extends BaseProtocolDecoder {
+
+    static final String PREFIX_DI = "di";
+    static final String KEY_AXIS_X = "axisX";
+    static final String KEY_AXIS_Y = "axisY";
+    static final String KEY_AXIS_Z = "axisZ";
+    static final String KEY_WORK_MODE = "workMode";
+    private final String PREFIX_DRIVER = "driver";
+    private static final String KEY_USB_CONNECTED = "usbConnected";
+    private static final String KEY_UPTIME = "uptime";
+    private static final String KEY_BUTTON = "button";
+    private static final String KEY_PRIORITY = "priority";
 
     private static final int IMAGE_PACKET_MAX = 2048;
     private static final int GNSS_IN_SLEEP_STATE = 3;
@@ -48,7 +60,9 @@ public class TeltonikaProtocolDecoder extends BaseProtocolDecoder {
 
     private boolean connectionless;
     private boolean extended;
+    private boolean parseFMB9xx;
     private Map<Long, ByteBuf> photos = new HashMap<>();
+    private TeltonikaFMB9XXEventParser fmb9xxParser;
 
     public void setExtended(boolean extended) {
         this.extended = extended;
@@ -58,6 +72,8 @@ public class TeltonikaProtocolDecoder extends BaseProtocolDecoder {
         super(protocol);
         this.connectionless = connectionless;
         this.extended = Context.getConfig().getBoolean(getProtocolName() + ".extended");
+        this.parseFMB9xx = Context.getConfig().getBoolean(getProtocolName() + ".fmb9xx");
+        this.fmb9xxParser = new TeltonikaFMB9XXEventParser();
     }
 
     private void parseIdentification(Channel channel, SocketAddress remoteAddress, ByteBuf buf) {
@@ -186,19 +202,19 @@ public class TeltonikaProtocolDecoder extends BaseProtocolDecoder {
             case 2:
             case 3:
             case 4:
-                position.set("di" + id, readValue(buf, length, false));
+                position.set(PREFIX_DI + id, readValue(buf, length, false));
                 break;
             case 9:
                 position.set(Position.PREFIX_ADC + 1, readValue(buf, length, false));
                 break;
             case 17:
-                position.set("axisX", readValue(buf, length, true));
+                position.set(KEY_AXIS_X, readValue(buf, length, true));
                 break;
             case 18:
-                position.set("axisY", readValue(buf, length, true));
+                position.set(KEY_AXIS_Y, readValue(buf, length, true));
                 break;
             case 19:
-                position.set("axisZ", readValue(buf, length, true));
+                position.set(KEY_AXIS_Z, readValue(buf, length, true));
                 break;
             case 21:
                 position.set(Position.KEY_RSSI, readValue(buf, length, false));
@@ -216,7 +232,7 @@ public class TeltonikaProtocolDecoder extends BaseProtocolDecoder {
                 position.set(Position.KEY_BATTERY, readValue(buf, length, false) * 0.001);
                 break;
             case 69:
-                position.set("gpsStatus", readValue(buf, length, false));
+                position.set(Position.KEY_GPS_STATUS, readValue(buf, length, false));
                 break;
             case 72:
             case 73:
@@ -230,7 +246,7 @@ public class TeltonikaProtocolDecoder extends BaseProtocolDecoder {
                 }
                 break;
             case 80:
-                position.set("workMode", readValue(buf, length, false));
+                position.set(KEY_WORK_MODE, readValue(buf, length, false));
                 break;
             case 129:
             case 130:
@@ -238,8 +254,8 @@ public class TeltonikaProtocolDecoder extends BaseProtocolDecoder {
             case 132:
             case 133:
             case 134:
-                String driver = id == 129 || id == 132 ? "" : position.getString("driver1");
-                position.set("driver" + (id >= 132 ? 2 : 1),
+                String driver = id == 129 || id == 132 ? "" : position.getString(PREFIX_DRIVER+"1");
+                position.set(PREFIX_DRIVER + (id >= 132 ? 2 : 1),
                         driver + buf.readSlice(length).toString(StandardCharsets.US_ASCII).trim());
                 break;
             case 179:
@@ -298,10 +314,10 @@ public class TeltonikaProtocolDecoder extends BaseProtocolDecoder {
                 position.set(Position.KEY_BATTERY_LEVEL, readValue(buf, length, false));
                 break;
             case 2:
-                position.set("usbConnected", readValue(buf, length, false) == 1);
+                position.set(KEY_USB_CONNECTED, readValue(buf, length, false) == 1);
                 break;
             case 5:
-                position.set("uptime", readValue(buf, length, false));
+                position.set(KEY_UPTIME, readValue(buf, length, false));
                 break;
             case 20:
                 position.set(Position.KEY_HDOP, readValue(buf, length, false) * 0.1);
@@ -316,7 +332,7 @@ public class TeltonikaProtocolDecoder extends BaseProtocolDecoder {
                 position.set(Position.KEY_BATTERY, readValue(buf, length, false) * 0.001);
                 break;
             case 221:
-                position.set("button", readValue(buf, length, false));
+                position.set(KEY_BUTTON, readValue(buf, length, false));
                 break;
             case 222:
                 if (readValue(buf, length, false) == 1) {
@@ -440,7 +456,7 @@ public class TeltonikaProtocolDecoder extends BaseProtocolDecoder {
 
             position.setTime(new Date(buf.readLong()));
 
-            position.set("priority", buf.readUnsignedByte());
+            position.set(KEY_PRIORITY, buf.readUnsignedByte());
 
             position.setLongitude(buf.readInt() / 10000000.0);
             position.setLatitude(buf.readInt() / 10000000.0);
@@ -519,6 +535,9 @@ public class TeltonikaProtocolDecoder extends BaseProtocolDecoder {
         }
 
         decodeNetwork(position);
+        if(this.parseFMB9xx){
+            decodeFMB9xxParameters(position);
+        }
         checkGPSStatus(position);
     }
 
@@ -627,5 +646,39 @@ public class TeltonikaProtocolDecoder extends BaseProtocolDecoder {
         ){
             position.setValid(true);
         }
+    }
+
+    private static Map.Entry<String, Object> createEntry(String key, Object value) {
+        return new AbstractMap.SimpleEntry<>(key, value);
+    }
+
+    private void decodeFMB9xxParameters(Position position) {
+        // this function will check all attributes of the position and if there are any unparsed (i.e. io214),
+        // then it will try to map it to proper name based on latest FMB protocol description
+
+        Map<String, Object> posAttrs = position.getAttributes();
+        // copy of attributes, to make sure we don't mutate Map we are iterating
+        Map<String, Object> attrs = new HashMap<String, Object>(posAttrs);
+        int id;
+
+        // iterate over copy
+        for(Map.Entry<String, Object> entry : attrs.entrySet()) {
+            // check if there are unparsed attributes
+            if( entry.getKey().matches("^"+Position.PREFIX_IO+"[0-9]+$") ) {
+                // parse attribute Id
+                id = Integer.parseInt(entry.getKey().substring(Position.PREFIX_IO.length()));
+                // convert Id to text
+                String event = fmb9xxParser.parseEvent(id);
+                if(event != null){
+                    // replace attribute value (remove old, add new)
+                    position.add(createEntry(event, entry.getValue()));
+                    posAttrs.remove(entry.getKey());
+                }
+            }
+        }
+    }
+
+    public void setParseFMB9xx(boolean parseFMB9xx){
+        this.parseFMB9xx = parseFMB9xx;
     }
 }
